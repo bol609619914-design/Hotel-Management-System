@@ -143,17 +143,39 @@ const roomPage = ref(createPager())
 const reservationPage = ref(createPager())
 const guestPage = ref(createPager())
 const userPage = ref(createPager())
+const financePage = ref(createPager())
+const logPage = ref(createPager())
+const notificationPage = ref(createPager())
 const selectedGuestProfile = ref(null)
+const selectedReservationOps = ref(null)
 const customerReservationPage = ref(createPager())
 const customerRoomTypes = ref([])
 const customerRooms = ref([])
 const customerProfile = ref(null)
+const roomCalendar = ref([])
+const unreadNotificationCount = ref(0)
+const financeSummary = ref({
+  transactionCount: 0,
+  chargeTotal: 0,
+  discountTotal: 0,
+  refundTotal: 0,
+  netTotal: 0,
+})
 
 const roomTypeFilters = ref({ keyword: '' })
 const roomFilters = ref({ keyword: '', roomTypeId: '', status: '', cleanStatus: '' })
 const reservationFilters = ref({ keyword: '', status: '', channel: '', roomNumber: '' })
 const guestFilters = ref({ keyword: '', memberLevel: '' })
 const userFilters = ref({ keyword: '', role: '', status: '' })
+const financeFilters = ref({ reservationId: '', transactionType: '', direction: '' })
+const logFilters = ref({ reservationId: '', actionType: '', operatorUsername: '' })
+const notificationFilters = ref({ status: '', category: '' })
+const calendarFilters = ref({ startDate: dateString(today), days: 7, floor: '' })
+const reservationOpsForm = ref({
+  extendCheckOutDate: plusDays(today, 2),
+  changeRoomId: '',
+  changeReason: '',
+})
 
 const roomTypeForm = ref(defaultRoomTypeForm())
 const roomForm = ref(defaultRoomForm())
@@ -174,8 +196,8 @@ const roleLabel = computed(() => {
 })
 const visibleTabs = computed(() =>
   isAdmin.value
-    ? ['dashboard', 'room-types', 'rooms', 'reservations', 'guests', 'users']
-    : ['dashboard', 'reservations', 'guests', 'rooms']
+    ? ['dashboard', 'calendar', 'reservations', 'finance', 'logs', 'messages', 'room-types', 'rooms', 'guests', 'users']
+    : ['dashboard', 'calendar', 'reservations', 'finance', 'logs', 'messages', 'guests', 'rooms']
 )
 
 const stats = computed(() => [
@@ -230,6 +252,32 @@ const customerStayNights = computed(() => {
 
 const customerEstimatedAmount = computed(() => customerRoomRate.value * customerStayNights.value)
 
+const calendarDays = computed(() => {
+  const start = new Date(calendarFilters.value.startDate || dateString(today))
+  const days = Number(calendarFilters.value.days || 7)
+  return Array.from({ length: days }, (_, index) => {
+    const next = new Date(start)
+    next.setDate(start.getDate() + index)
+    return dateString(next)
+  })
+})
+
+const availableTargetRooms = computed(() => {
+  if (!selectedReservationOps.value) return []
+  return roomCatalog.value.filter((room) => room.id !== selectedReservationOps.value.roomId && room.status !== 'MAINTENANCE')
+})
+
+const financeSummaryCards = computed(() => [
+  { label: '流水笔数', value: financeSummary.value.transactionCount || 0, note: '当前筛选范围' },
+  { label: '入账金额', value: currency(financeSummary.value.chargeTotal), note: '房费 / 押金 / 结算' },
+  { label: '优惠抵扣', value: currency(financeSummary.value.discountTotal), note: '优惠券与折扣' },
+  { label: '净流水', value: currency(financeSummary.value.netTotal), note: '入账 - 抵扣 - 退款' },
+])
+
+const unreadNotifications = computed(() =>
+  notificationPage.value.records.filter((item) => item.status === 'UNREAD').slice(0, 3)
+)
+
 const trendMax = computed(() => Math.max(...trends.value.points.map((item) => Number(item.revenue || 0)), 1))
 const trendPolyline = computed(() => {
   if (!trends.value.points.length) return ''
@@ -248,6 +296,101 @@ const currency = (value) =>
     currency: 'CNY',
     maximumFractionDigits: 0,
   }).format(Number(value || 0))
+
+const statusText = (status) =>
+  ({
+    BOOKED: '已预订',
+    CHECKED_IN: '已入住',
+    CHECKED_OUT: '已退房',
+    CANCELLED: '已取消',
+    AVAILABLE: '空房',
+    OCCUPIED: '在住',
+    MAINTENANCE: '维修停用',
+    UNREAD: '未读',
+    READ: '已读',
+    READY: '已清洁',
+    CLEANING: '清洁中',
+    BLOCKED: '锁房',
+    ACTIVE: '启用',
+    DISABLED: '停用',
+  }[status] || status || '—')
+
+const channelText = (channel) =>
+  ({
+    DIRECT: '前台直订',
+    OTA: '线上平台',
+    PHONE: '电话预订',
+  }[channel] || channel || '—')
+
+const roleText = (role) =>
+  ({
+    ADMIN: '系统管理员',
+    FRONT_DESK: '前台专员',
+    CUSTOMER: '住客',
+    STAFF: '员工',
+  }[role] || role || '—')
+
+const actionText = (action) =>
+  ({
+    CREATE_RESERVATION: '创建订单',
+    UPDATE_RESERVATION: '更新订单',
+    DELETE_RESERVATION: '删除订单',
+    STATUS_CHANGE: '状态变更',
+    EXTEND_STAY: '办理续住',
+    ROOM_CHANGE: '办理换房',
+  }[action] || action || '—')
+
+const transactionText = (type) =>
+  ({
+    ROOM_FEE: '房费入账',
+    BREAKFAST_FEE: '早餐费用',
+    EXTRA_BED_FEE: '加床费用',
+    DEPOSIT: '押金',
+    COUPON: '优惠券抵扣',
+    CHECK_IN_CONFIRMED: '入住确认',
+    CHECKOUT_SETTLEMENT: '退房结算',
+    BOOKING_CANCELLED: '订单取消',
+    ROOM_FEE_ADJUSTMENT: '房费调整',
+    BREAKFAST_ADJUSTMENT: '早餐调整',
+    EXTRA_BED_ADJUSTMENT: '加床调整',
+    DEPOSIT_ADJUSTMENT: '押金调整',
+    COUPON_ADJUSTMENT: '优惠调整',
+  }[type] || type || '—')
+
+const directionText = (direction) =>
+  ({
+    CHARGE: '入账',
+    DISCOUNT: '抵扣',
+    REFUND: '退款',
+  }[direction] || direction || '—')
+
+const notificationCategoryText = (category) =>
+  ({
+    BOOKING_SUCCESS: '预订成功',
+    UPCOMING_CHECKIN: '即将入住',
+    UPCOMING_CHECKOUT: '即将退房',
+  }[category] || category || '—')
+
+const formatDateTime = (value) => (value ? value.replace('T', ' ').slice(0, 16) : '—')
+
+function snapshotText(snapshot) {
+  if (!snapshot) return '—'
+  const parts = Object.fromEntries(
+    snapshot.split(',').map((part) => {
+      const [key, ...rest] = part.split('=')
+      return [key, rest.join('=')]
+    })
+  )
+  const items = [
+    parts.reservationNo && `订单 ${parts.reservationNo}`,
+    parts.status && `状态 ${statusText(parts.status)}`,
+    parts.roomId && `房间ID ${parts.roomId}`,
+    parts.checkIn && `入住 ${parts.checkIn}`,
+    parts.checkOut && `离店 ${parts.checkOut}`,
+    parts.total && `金额 ${currency(parts.total)}`,
+  ].filter(Boolean)
+  return items.length ? items.join(' · ') : snapshot
+}
 
 async function requestJson(url, options = {}) {
   const headers = {
@@ -350,6 +493,40 @@ async function loadGuestProfile(id) {
   selectedGuestProfile.value = await requestJson(`/api/v1/guests/${id}/profile`)
 }
 
+async function loadRoomCalendar() {
+  const query = queryString({
+    startDate: calendarFilters.value.startDate,
+    days: calendarFilters.value.days,
+    floor: calendarFilters.value.floor,
+  })
+  roomCalendar.value = await requestJson(`/api/v1/operations/room-calendar?${query}`)
+}
+
+async function loadFinancePage(pageNo = financePage.value.pageNo) {
+  const query = queryString({ pageNo, pageSize: financePage.value.pageSize, ...financeFilters.value })
+  const [pageData, summaryData] = await Promise.all([
+    requestJson(`/api/v1/operations/financial-transactions?${query}`),
+    requestJson(`/api/v1/operations/financial-summary?${queryString(financeFilters.value)}`),
+  ])
+  financePage.value = pageData
+  financeSummary.value = summaryData
+}
+
+async function loadLogPage(pageNo = logPage.value.pageNo) {
+  const query = queryString({ pageNo, pageSize: logPage.value.pageSize, ...logFilters.value })
+  logPage.value = await requestJson(`/api/v1/operations/logs?${query}`)
+}
+
+async function loadNotificationPage(pageNo = notificationPage.value.pageNo) {
+  const query = queryString({ pageNo, pageSize: notificationPage.value.pageSize, ...notificationFilters.value })
+  const [pageData, unreadData] = await Promise.all([
+    requestJson(`/api/v1/operations/notifications?${query}`),
+    requestJson('/api/v1/operations/notifications?pageNo=1&pageSize=1&status=UNREAD'),
+  ])
+  notificationPage.value = pageData
+  unreadNotificationCount.value = unreadData.total
+}
+
 async function loadCustomerProfile() {
   customerProfile.value = await requestJson('/api/v1/customer/auth/me')
 }
@@ -378,6 +555,10 @@ async function loadAllData() {
         loadRoomTypePage(1),
         loadRoomPage(1),
         loadReservationPage(1),
+        loadRoomCalendar(),
+        loadFinancePage(1),
+        loadLogPage(1),
+        loadNotificationPage(1),
         loadGuestPage(1),
         isAdmin.value ? loadUserPage(1) : Promise.resolve(),
       ])
@@ -388,6 +569,12 @@ async function loadAllData() {
       }
       if (!isAdmin.value && activeTab.value === 'users') {
         activeTab.value = 'dashboard'
+      }
+      selectedReservationOps.value = reservationPage.value.records[0] || null
+      if (selectedReservationOps.value) {
+        reservationOpsForm.value.extendCheckOutDate = plusDays(new Date(selectedReservationOps.value.checkOutDate), 1)
+        reservationOpsForm.value.changeRoomId = ''
+        reservationOpsForm.value.changeReason = ''
       }
     }
   } catch (error) {
@@ -575,6 +762,13 @@ function startEditReservation(item) {
   activeTab.value = 'reservations'
 }
 
+function selectReservationOps(item) {
+  selectedReservationOps.value = item
+  reservationOpsForm.value.extendCheckOutDate = plusDays(new Date(item.checkOutDate), 1)
+  reservationOpsForm.value.changeRoomId = ''
+  reservationOpsForm.value.changeReason = ''
+}
+
 function startEditGuest(item) {
   guestForm.value = { ...item }
   editingGuestId.value = item.id
@@ -665,7 +859,7 @@ async function saveReservation() {
     })
     successMessage.value = editingReservationId.value ? '订单已更新' : '订单已创建'
     resetReservationForm()
-    await Promise.all([loadDashboard(), loadReservationPage(1), loadGuestPage(1)])
+    await Promise.all([loadDashboard(), loadReservationPage(1), loadGuestPage(1), loadFinancePage(1), loadLogPage(1), loadNotificationPage(1), loadRoomCalendar()])
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -758,6 +952,10 @@ async function removeItem(type, id) {
       loadRoomTypePage(),
       loadRoomPage(),
       loadReservationPage(),
+      loadFinancePage(),
+      loadLogPage(),
+      loadNotificationPage(),
+      loadRoomCalendar(),
       loadGuestPage(),
       isAdmin.value ? loadUserPage() : Promise.resolve(),
     ])
@@ -777,7 +975,83 @@ async function changeReservationStatus(item, status) {
       body: JSON.stringify({ status }),
     })
     successMessage.value = `订单状态已更新为 ${status}`
-    await Promise.all([loadDashboard(), loadReservationPage(reservationPage.value.pageNo), loadRoomPage(roomPage.value.pageNo)])
+    await Promise.all([
+      loadDashboard(),
+      loadReservationPage(reservationPage.value.pageNo),
+      loadRoomPage(roomPage.value.pageNo),
+      loadRoomCalendar(),
+      loadFinancePage(1),
+      loadLogPage(1),
+      loadNotificationPage(1),
+    ])
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function extendReservation() {
+  if (!selectedReservationOps.value) return
+  actionLoading.value = true
+  clearMessages()
+  try {
+    await requestJson(`/api/v1/reservations/${selectedReservationOps.value.id}/extend`, {
+      method: 'PUT',
+      body: JSON.stringify({ checkOutDate: reservationOpsForm.value.extendCheckOutDate }),
+    })
+    successMessage.value = '续住已处理'
+    await Promise.all([
+      loadDashboard(),
+      loadReservationPage(reservationPage.value.pageNo),
+      loadRoomCalendar(),
+      loadFinancePage(1),
+      loadLogPage(1),
+      loadNotificationPage(1),
+    ])
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function changeReservationRoom() {
+  if (!selectedReservationOps.value || !reservationOpsForm.value.changeRoomId) return
+  actionLoading.value = true
+  clearMessages()
+  try {
+    await requestJson(`/api/v1/reservations/${selectedReservationOps.value.id}/change-room`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        roomId: Number(reservationOpsForm.value.changeRoomId),
+        reason: reservationOpsForm.value.changeReason,
+      }),
+    })
+    successMessage.value = '换房已处理'
+    await Promise.all([
+      loadDashboard(),
+      loadReservationPage(reservationPage.value.pageNo),
+      loadRoomPage(roomPage.value.pageNo),
+      loadRoomCalendar(),
+      loadFinancePage(1),
+      loadLogPage(1),
+      loadNotificationPage(1),
+    ])
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function markNotificationRead(item) {
+  actionLoading.value = true
+  clearMessages()
+  try {
+    await requestJson(`/api/v1/operations/notifications/${item.id}/read`, { method: 'PUT' })
+    successMessage.value = '消息已标记为已读'
+    await loadNotificationPage(notificationPage.value.pageNo)
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -874,9 +1148,13 @@ function goPage(loader, pagerRef, nextPage) {
 function tabLabel(tab) {
   return {
     dashboard: '概览',
+    calendar: '房态',
     'room-types': '房型',
     rooms: '房间',
     reservations: '订单',
+    finance: '流水',
+    logs: '日志',
+    messages: '提醒',
     guests: '住客',
     users: '账户',
   }[tab]
@@ -1143,7 +1421,7 @@ onMounted(async () => {
               <article class="summary-row">
                 <div>
                   <p class="list-title">入住流程</p>
-                  <p class="list-subtitle">提交后订单状态为 BOOKED，到店后由前台办理入住。</p>
+                <p class="list-subtitle">提交后订单状态为“已预订”，到店后由前台办理入住。</p>
                 </div>
               </article>
               <article class="summary-row">
@@ -1167,11 +1445,11 @@ onMounted(async () => {
             <article v-for="item in customerReservationPage.records" :key="item.id" class="table-row">
               <div>
                 <p class="list-title">{{ item.reservationNo }} · {{ item.roomNumber }}</p>
-                <p class="list-subtitle">{{ item.checkInDate }} 至 {{ item.checkOutDate }} · {{ item.status }}</p>
+                <p class="list-subtitle">{{ item.checkInDate }} 至 {{ item.checkOutDate }} · {{ statusText(item.status) }}</p>
                 <p class="list-subtitle">房费 {{ currency(item.roomFee) }} · 合计 {{ currency(item.totalAmount) }}</p>
               </div>
               <span :class="['pill', item.status === 'CHECKED_IN' ? 'pill-green' : item.status === 'CHECKED_OUT' ? 'pill-blue' : item.status === 'CANCELLED' ? 'pill-red' : 'pill-yellow']">
-                {{ item.status }}
+                {{ statusText(item.status) }}
               </span>
             </article>
           </div>
@@ -1260,6 +1538,7 @@ onMounted(async () => {
         <nav class="tabs">
           <button v-for="tab in visibleTabs" :key="tab" :class="['tab', activeTab === tab && 'is-active']" @click="activeTab = tab">
             {{ tabLabel(tab) }}
+            <span v-if="tab === 'messages' && unreadNotificationCount > 0" class="tab-badge">{{ unreadNotificationCount }}</span>
           </button>
         </nav>
       </section>
@@ -1347,13 +1626,13 @@ onMounted(async () => {
                 <article class="summary-row">
                   <div>
                     <p class="list-title">到店接待</p>
-                    <p class="list-subtitle">先处理今日 BOOKED 订单，确认证件、押金与房态。</p>
+                    <p class="list-subtitle">先处理今日“已预订”订单，确认证件、押金与房态。</p>
                   </div>
                 </article>
                 <article class="summary-row">
                   <div>
                     <p class="list-title">在住跟进</p>
-                    <p class="list-subtitle">重点关注 CHECKED_IN 订单的续住、加床与早餐加购。</p>
+                    <p class="list-subtitle">重点关注“已入住”订单的续住、加床与早餐加购。</p>
                   </div>
                 </article>
                 <article class="summary-row">
@@ -1362,6 +1641,45 @@ onMounted(async () => {
                     <p class="list-subtitle">退房前打印结算单，核对房费明细、押金与优惠券抵扣。</p>
                   </div>
                 </article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="section-label">Message Focus</p>
+                  <h2>未读提醒</h2>
+                </div>
+                <button class="secondary-button small" @click="activeTab = 'messages'">查看全部</button>
+              </div>
+              <div v-if="unreadNotifications.length" class="table-list">
+                <article v-for="item in unreadNotifications" :key="item.id" class="summary-row">
+                  <div>
+                    <p class="list-title">{{ item.title }}</p>
+                    <p class="list-subtitle">{{ item.content }}</p>
+                  </div>
+                  <span class="pill pill-yellow">{{ item.category }}</span>
+                </article>
+              </div>
+              <p v-else class="empty-note">暂无未读提醒，前台节奏很稳。</p>
+            </section>
+          </section>
+
+          <section class="panel-grid">
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <p class="section-label">Finance Brief</p>
+                  <h2>流水概览</h2>
+                </div>
+                <button class="secondary-button small" @click="activeTab = 'finance'">查看流水</button>
+              </div>
+              <div class="trend-strip">
+                <div v-for="item in financeSummaryCards" :key="item.label" class="trend-kpi">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                  <small>{{ item.note }}</small>
+                </div>
               </div>
             </section>
 
@@ -1382,6 +1700,68 @@ onMounted(async () => {
               </form>
             </section>
           </section>
+        </section>
+
+        <section v-if="activeTab === 'calendar'" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="section-label">Room Calendar</p>
+              <h2>房态日历</h2>
+            </div>
+            <p class="section-note">按日期查看每个房间的预订、入住与空房状态</p>
+          </div>
+          <div class="filter-grid">
+            <label>开始日期<input v-model="calendarFilters.startDate" type="date" /></label>
+            <label>天数
+              <select v-model="calendarFilters.days">
+                <option :value="7">7 天</option>
+                <option :value="10">10 天</option>
+                <option :value="14">14 天</option>
+              </select>
+            </label>
+            <label>楼层<input v-model="calendarFilters.floor" type="number" min="1" placeholder="全部楼层" /></label>
+            <button class="secondary-button" @click="loadRoomCalendar">刷新日历</button>
+          </div>
+          <div class="calendar-legend">
+            <span><i class="legend-dot legend-available"></i> 空房</span>
+            <span><i class="legend-dot legend-booked"></i> 已预订</span>
+            <span><i class="legend-dot legend-checked-in"></i> 在住</span>
+            <span><i class="legend-dot legend-maintenance"></i> 停用/维修</span>
+          </div>
+          <div class="calendar-table">
+            <div class="calendar-row calendar-head" :style="{ gridTemplateColumns: `minmax(220px, 1.3fr) repeat(${calendarDays.length}, minmax(94px, 1fr))` }">
+              <div class="calendar-room-meta">房间</div>
+              <div v-for="day in calendarDays" :key="day" class="calendar-day">{{ day.slice(5) }}</div>
+            </div>
+            <div
+              v-for="row in roomCalendar"
+              :key="row.roomId"
+              class="calendar-row"
+              :style="{ gridTemplateColumns: `minmax(220px, 1.3fr) repeat(${calendarDays.length}, minmax(94px, 1fr))` }"
+            >
+              <div class="calendar-room-meta">
+                <p class="list-title">{{ row.roomNumber }}</p>
+                <p class="list-subtitle">{{ row.roomTypeName }} · {{ row.floor }}F · {{ row.cleanStatus }}</p>
+              </div>
+              <div
+                v-for="day in row.days"
+                :key="`${row.roomId}-${day.date}`"
+                :class="['calendar-cell', `calendar-${day.status.toLowerCase()}`]"
+              >
+                <strong>{{ day.status === 'CHECKED_IN' ? '在住' : day.status === 'BOOKED' ? '预订' : day.status === 'MAINTENANCE' ? '停用' : '空房' }}</strong>
+                <small v-if="day.guestName">{{ day.guestName }}</small>
+                <small v-else>{{ row.roomNumber }}</small>
+                <div class="calendar-tooltip">
+                  <p>{{ row.roomNumber }} · {{ row.roomTypeName }}</p>
+                  <p>日期：{{ day.date }}</p>
+                  <p>状态：{{ day.status }}</p>
+                  <p v-if="day.reservationNo">订单：{{ day.reservationNo }}</p>
+                  <p v-if="day.guestName">住客：{{ day.guestName }}</p>
+                  <p>清洁：{{ row.cleanStatus }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section v-if="activeTab === 'room-types'" class="split-layout">
@@ -1516,7 +1896,7 @@ onMounted(async () => {
               <article v-for="item in roomPage.records" :key="item.id" class="table-row">
                 <div>
                   <p class="list-title">Room {{ item.roomNumber }} · {{ roomTypeName(item.roomTypeId) }}</p>
-                  <p class="list-subtitle">楼层 {{ item.floor }}F · {{ item.status }} · {{ item.cleanStatus }}</p>
+                  <p class="list-subtitle">楼层 {{ item.floor }}F · {{ statusText(item.status) }} · {{ statusText(item.cleanStatus) }}</p>
                 </div>
                 <div v-if="isAdmin" class="inline-actions">
                   <button class="secondary-button small" @click="startEditRoom(item)">编辑</button>
@@ -1549,7 +1929,7 @@ onMounted(async () => {
                 <select v-model="reservationForm.roomId">
                   <option value="">请选择</option>
                   <option v-for="item in roomCatalog" :key="item.id" :value="item.id">
-                    {{ item.roomNumber }} · {{ item.status }}
+                    {{ item.roomNumber }} · {{ statusText(item.status) }}
                   </option>
                 </select>
               </label>
@@ -1558,9 +1938,9 @@ onMounted(async () => {
               <label>入住人数<input v-model="reservationForm.guestCount" type="number" min="1" /></label>
               <label>渠道
                 <select v-model="reservationForm.channel">
-                  <option value="DIRECT">DIRECT</option>
-                  <option value="OTA">OTA</option>
-                  <option value="PHONE">PHONE</option>
+                  <option value="DIRECT">前台直订</option>
+                  <option value="OTA">线上平台</option>
+                  <option value="PHONE">电话预订</option>
                 </select>
               </label>
               <label>房价/晚<input :value="currency(selectedRoomRate)" disabled /></label>
@@ -1590,26 +1970,64 @@ onMounted(async () => {
               <input v-model="reservationFilters.keyword" placeholder="订单号 / 住客 / 手机号" />
               <select v-model="reservationFilters.status">
                 <option value="">全部状态</option>
-                <option value="BOOKED">BOOKED</option>
-                <option value="CHECKED_IN">CHECKED_IN</option>
-                <option value="CHECKED_OUT">CHECKED_OUT</option>
-                <option value="CANCELLED">CANCELLED</option>
+                <option value="BOOKED">已预订</option>
+                <option value="CHECKED_IN">已入住</option>
+                <option value="CHECKED_OUT">已退房</option>
+                <option value="CANCELLED">已取消</option>
               </select>
               <select v-model="reservationFilters.channel">
                 <option value="">全部渠道</option>
-                <option value="DIRECT">DIRECT</option>
-                <option value="OTA">OTA</option>
-                <option value="PHONE">PHONE</option>
+                <option value="DIRECT">前台直订</option>
+                <option value="OTA">线上平台</option>
+                <option value="PHONE">电话预订</option>
               </select>
               <input v-model="reservationFilters.roomNumber" placeholder="房号" />
               <button class="secondary-button" @click="loadReservationPage(1)">筛选</button>
             </div>
-            <div class="table-list">
-              <article v-for="item in reservationPage.records" :key="item.id" class="table-row">
+            <section v-if="selectedReservationOps" class="ops-card">
+              <div class="section-head compact">
                 <div>
-                  <p class="list-title">{{ item.guestName }} · {{ item.roomNumber }} · {{ item.status }}</p>
+                  <p class="section-label">Stay Operations</p>
+                  <h2>入住操作</h2>
+                </div>
+              </div>
+              <div class="table-list">
+                <article class="summary-row">
+                  <div>
+                    <p class="list-title">{{ selectedReservationOps.guestName }} · {{ selectedReservationOps.roomNumber }}</p>
+                    <p class="list-subtitle">{{ selectedReservationOps.checkInDate }} 至 {{ selectedReservationOps.checkOutDate }} · {{ selectedReservationOps.status }}</p>
+                  </div>
+                  <strong>{{ currency(selectedReservationOps.totalAmount) }}</strong>
+                </article>
+              </div>
+              <div class="ops-grid">
+                <label>续住到<input v-model="reservationOpsForm.extendCheckOutDate" type="date" /></label>
+                <button class="secondary-button" @click="extendReservation">办理续住</button>
+                <label>
+                  更换房间
+                  <select v-model="reservationOpsForm.changeRoomId">
+                    <option value="">请选择目标房间</option>
+                    <option v-for="room in availableTargetRooms" :key="room.id" :value="room.id">
+                      {{ room.roomNumber }} · {{ roomTypeName(room.roomTypeId) }} · {{ statusText(room.status) }}
+                    </option>
+                  </select>
+                </label>
+                <label>换房原因<input v-model="reservationOpsForm.changeReason" type="text" placeholder="如：住客偏好 / 设备问题" /></label>
+              </div>
+              <div class="form-actions">
+                <button class="primary-button" type="button" @click="changeReservationRoom">确认换房</button>
+              </div>
+            </section>
+            <div class="table-list">
+              <article
+                v-for="item in reservationPage.records"
+                :key="item.id"
+                :class="['table-row', selectedReservationOps?.id === item.id && 'table-row-active']"
+              >
+                <div>
+                  <p class="list-title">{{ item.guestName }} · {{ item.roomNumber }} · {{ statusText(item.status) }}</p>
                   <p class="list-subtitle">
-                    {{ item.checkInDate }} 至 {{ item.checkOutDate }} · {{ item.channel }} · {{ currency(item.totalAmount) }}
+                    {{ item.checkInDate }} 至 {{ item.checkOutDate }} · {{ channelText(item.channel) }} · {{ currency(item.totalAmount) }}
                   </p>
                   <p class="list-subtitle">
                     房费 {{ currency(item.roomFee) }} / 早餐 {{ currency(item.breakfastFee) }} / 加床 {{ currency(item.extraBedFee) }}
@@ -1625,9 +2043,10 @@ onMounted(async () => {
                 </div>
                 <div class="inline-actions vertical">
                   <span :class="['pill', item.status === 'CHECKED_IN' ? 'pill-green' : item.status === 'CHECKED_OUT' ? 'pill-blue' : item.status === 'CANCELLED' ? 'pill-red' : 'pill-yellow']">
-                    {{ item.status }}
+                    {{ statusText(item.status) }}
                   </span>
                   <div class="inline-actions">
+                    <button class="secondary-button small" @click="selectReservationOps(item)">选中</button>
                     <button class="secondary-button small" @click="startEditReservation(item)">编辑</button>
                     <button v-if="isAdmin" class="secondary-button small danger" @click="removeItem('reservation', item.id)">删除</button>
                   </div>
@@ -1640,6 +2059,135 @@ onMounted(async () => {
               <button class="secondary-button small" @click="goPage(loadReservationPage, reservationPage, reservationPage.pageNo + 1)">下一页</button>
             </div>
           </section>
+        </section>
+
+        <section v-if="activeTab === 'finance'" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="section-label">财务流水</p>
+              <h2>财务流水</h2>
+            </div>
+          </div>
+          <div class="filter-grid">
+            <input v-model="financeFilters.reservationId" placeholder="订单 ID" />
+            <select v-model="financeFilters.transactionType">
+              <option value="">全部类型</option>
+              <option value="ROOM_FEE">房费入账</option>
+              <option value="DEPOSIT">押金</option>
+              <option value="CHECKOUT_SETTLEMENT">退房结算</option>
+              <option value="ROOM_FEE_ADJUSTMENT">房费调整</option>
+              <option value="COUPON">优惠券抵扣</option>
+            </select>
+            <select v-model="financeFilters.direction">
+              <option value="">全部方向</option>
+              <option value="CHARGE">入账</option>
+              <option value="DISCOUNT">抵扣</option>
+              <option value="REFUND">退款</option>
+            </select>
+            <button class="secondary-button" @click="loadFinancePage(1)">筛选</button>
+          </div>
+          <div class="stats-grid finance-summary-grid">
+            <article v-for="item in financeSummaryCards" :key="item.label" class="stat-card">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+              <small>{{ item.note }}</small>
+            </article>
+          </div>
+          <div class="table-list">
+            <article v-for="item in financePage.records" :key="item.id" class="table-row">
+              <div>
+                <p class="list-title">{{ transactionText(item.transactionType) }} · {{ item.reservationNo }}</p>
+                <p class="list-subtitle">{{ item.guestName }} · {{ item.roomNumber }} · {{ item.remark }}</p>
+              </div>
+              <div class="inline-actions vertical">
+                <span :class="['pill', item.direction === 'CHARGE' ? 'pill-yellow' : item.direction === 'DISCOUNT' ? 'pill-green' : 'pill-blue']">{{ directionText(item.direction) }}</span>
+                <strong>{{ currency(item.amount) }}</strong>
+              </div>
+            </article>
+          </div>
+          <div class="pager">
+            <button class="secondary-button small" @click="goPage(loadFinancePage, financePage, financePage.pageNo - 1)">上一页</button>
+            <span>第 {{ financePage.pageNo }} / {{ financePage.totalPages || 1 }} 页</span>
+            <button class="secondary-button small" @click="goPage(loadFinancePage, financePage, financePage.pageNo + 1)">下一页</button>
+          </div>
+        </section>
+
+        <section v-if="activeTab === 'logs'" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="section-label">操作日志</p>
+              <h2>操作日志</h2>
+            </div>
+          </div>
+          <div class="filter-grid">
+            <input v-model="logFilters.reservationId" placeholder="订单 ID" />
+            <input v-model="logFilters.operatorUsername" placeholder="操作人" />
+            <select v-model="logFilters.actionType">
+              <option value="">全部动作</option>
+              <option value="CREATE_RESERVATION">创建订单</option>
+              <option value="STATUS_CHANGE">状态变更</option>
+              <option value="EXTEND_STAY">办理续住</option>
+              <option value="ROOM_CHANGE">办理换房</option>
+            </select>
+            <button class="secondary-button" @click="loadLogPage(1)">筛选</button>
+          </div>
+          <div class="table-list">
+            <article v-for="item in logPage.records" :key="item.id" class="table-row">
+              <div>
+                <p class="list-title">{{ actionText(item.actionType) }} · {{ item.reservationNo || '系统记录' }}</p>
+                <p class="list-subtitle">操作人：{{ item.operatorUsername }} · {{ roleText(item.operatorRole) }} · {{ item.description }}</p>
+                <p class="list-subtitle">变更前：{{ snapshotText(item.beforeSnapshot) }}</p>
+                <p class="list-subtitle">变更后：{{ snapshotText(item.afterSnapshot) }}</p>
+              </div>
+              <span class="pill pill-blue">{{ formatDateTime(item.createdAt) }}</span>
+            </article>
+          </div>
+          <div class="pager">
+            <button class="secondary-button small" @click="goPage(loadLogPage, logPage, logPage.pageNo - 1)">上一页</button>
+            <span>第 {{ logPage.pageNo }} / {{ logPage.totalPages || 1 }} 页</span>
+            <button class="secondary-button small" @click="goPage(loadLogPage, logPage, logPage.pageNo + 1)">下一页</button>
+          </div>
+        </section>
+
+        <section v-if="activeTab === 'messages'" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="section-label">消息提醒</p>
+              <h2>消息提醒</h2>
+            </div>
+          </div>
+          <div class="filter-grid">
+            <select v-model="notificationFilters.status">
+              <option value="">全部状态</option>
+              <option value="UNREAD">未读</option>
+              <option value="READ">已读</option>
+            </select>
+            <select v-model="notificationFilters.category">
+              <option value="">全部类别</option>
+              <option value="BOOKING_SUCCESS">预订成功</option>
+              <option value="UPCOMING_CHECKIN">即将入住</option>
+              <option value="UPCOMING_CHECKOUT">即将退房</option>
+            </select>
+            <button class="secondary-button" @click="loadNotificationPage(1)">筛选</button>
+          </div>
+          <div class="table-list">
+            <article v-for="item in notificationPage.records" :key="item.id" class="table-row">
+              <div>
+                <p class="list-title">{{ item.title }}</p>
+                <p class="list-subtitle">{{ item.content }}</p>
+                <p class="list-subtitle">{{ notificationCategoryText(item.category) }} · {{ formatDateTime(item.scheduledAt) }}</p>
+              </div>
+              <div class="inline-actions vertical">
+                <span :class="['pill', item.status === 'UNREAD' ? 'pill-yellow' : 'pill-green']">{{ statusText(item.status) }}</span>
+                <button v-if="item.status === 'UNREAD'" class="secondary-button small" @click="markNotificationRead(item)">标记已读</button>
+              </div>
+            </article>
+          </div>
+          <div class="pager">
+            <button class="secondary-button small" @click="goPage(loadNotificationPage, notificationPage, notificationPage.pageNo - 1)">上一页</button>
+            <span>第 {{ notificationPage.pageNo }} / {{ notificationPage.totalPages || 1 }} 页</span>
+            <button class="secondary-button small" @click="goPage(loadNotificationPage, notificationPage, notificationPage.pageNo + 1)">下一页</button>
+          </div>
         </section>
 
         <section v-if="activeTab === 'guests'" class="triple-layout">
@@ -1736,7 +2284,7 @@ onMounted(async () => {
               <article v-for="item in selectedGuestProfile.history" :key="item.reservationId" class="history-row">
                 <div>
                   <p class="list-title">{{ item.reservationNo }} · {{ item.roomNumber }}</p>
-                  <p class="list-subtitle">{{ item.checkInDate }} 至 {{ item.checkOutDate }} · {{ item.status }}</p>
+                  <p class="list-subtitle">{{ item.checkInDate }} 至 {{ item.checkOutDate }} · {{ statusText(item.status) }}</p>
                 </div>
                 <strong>{{ currency(item.totalAmount) }}</strong>
               </article>
@@ -1805,7 +2353,7 @@ onMounted(async () => {
               <article v-for="item in userPage.records" :key="item.id" class="table-row">
                 <div>
                   <p class="list-title">{{ item.displayName }} · {{ item.username }}</p>
-                  <p class="list-subtitle">{{ item.role }} · {{ item.status }}</p>
+                  <p class="list-subtitle">{{ roleText(item.role) }} · {{ statusText(item.status) }}</p>
                 </div>
                 <div class="inline-actions">
                   <button class="secondary-button small" @click="startEditUser(item)">编辑</button>

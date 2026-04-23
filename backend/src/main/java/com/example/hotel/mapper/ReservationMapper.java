@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.hotel.entity.Reservation;
+import com.example.hotel.vo.ReminderSourceVO;
+import com.example.hotel.vo.ReservationCalendarItemVO;
 import com.example.hotel.vo.ReservationVO;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -312,4 +314,55 @@ public interface ReservationMapper extends BaseMapper<Reservation> {
             order by d.report_date
             """)
     java.util.List<com.example.hotel.vo.DashboardTrendPointVO> selectRecentTrendPoints();
+
+    @Select("""
+            select
+                r.id as reservation_id,
+                r.reservation_no,
+                r.room_id,
+                g.full_name as guest_name,
+                r.check_in_date,
+                r.check_out_date,
+                r.status
+            from reservation r
+            join guest g on g.id = r.guest_id
+            where r.status in ('BOOKED', 'CHECKED_IN')
+              and r.check_in_date < #{endDate}
+              and r.check_out_date > #{startDate}
+            order by r.room_id, r.check_in_date
+            """)
+    List<ReservationCalendarItemVO> selectCalendarReservations(@Param("startDate") LocalDate startDate,
+                                                               @Param("endDate") LocalDate endDate);
+
+    @Select("""
+            select
+                r.id as reservation_id,
+                r.reservation_no,
+                g.full_name as guest_name,
+                rm.room_number,
+                r.check_in_date as business_date
+            from reservation r
+            join guest g on g.id = r.guest_id
+            join room rm on rm.id = r.room_id
+            where r.status = 'BOOKED'
+              and r.check_in_date between curdate() and date_add(curdate(), interval 1 day)
+            order by r.check_in_date, rm.room_number
+            """)
+    List<ReminderSourceVO> selectUpcomingCheckInReminders();
+
+    @Select("""
+            select
+                r.id as reservation_id,
+                r.reservation_no,
+                g.full_name as guest_name,
+                rm.room_number,
+                r.check_out_date as business_date
+            from reservation r
+            join guest g on g.id = r.guest_id
+            join room rm on rm.id = r.room_id
+            where r.status = 'CHECKED_IN'
+              and r.check_out_date between curdate() and date_add(curdate(), interval 1 day)
+            order by r.check_out_date, rm.room_number
+            """)
+    List<ReminderSourceVO> selectUpcomingCheckOutReminders();
 }

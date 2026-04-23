@@ -10,6 +10,10 @@
 - 订单状态流转：支持 `BOOKED / CHECKED_IN / CHECKED_OUT / CANCELLED`
 - 自动计价能力：按房型单价与入住晚数自动计算订单金额
 - 费用拆分更贴近日常业务：房费、早餐、加床、押金、优惠券独立核算
+- 房态日历：按日期查看房间空房、预订、在住、停用状态
+- 真实前厅操作：支持订单续住、换房、入住、离店与取消
+- 财务流水与操作审计：记录订单费用变化、押金、优惠与关键操作日志
+- 消息提醒中心：预订成功、即将入住、即将退房提醒与未读角标
 - 经营分析看板：概览指标、趋势图、Excel 报表导出
 - 极简中后台 UI：统一信息结构、轻量视觉语言、适合演示与二次开发
 
@@ -54,6 +58,11 @@
 - 订单管理 CRUD
 - 订单分页、筛选、搜索
 - 订单状态流转
+- 房态日历与颜色图例
+- 入住续住与换房办理
+- 财务流水查询与汇总统计
+- 操作日志查询
+- 消息提醒中心与未读提醒
 - 住客管理 CRUD
 - 会员等级维护
 - 入住登记与离店处理
@@ -67,8 +76,19 @@
 - 自动汇总订单应收金额
 - 校验房间可用性与日期冲突
 - 记录历史入住与消费统计
+- 续住时自动重算房费与订单合计
+- 换房时自动校验目标房间可用性
+- 记录房费调整、押金、优惠券、结算等财务流水
 
-### 4. 住客端
+### 4. 房态、日志与提醒
+
+- 房态日历：按 7 / 10 / 14 天查看房间状态
+- 悬浮详情：展示日期、房间、订单号、住客和清洁状态
+- 财务流水：展示入账、抵扣、退款和净流水
+- 操作日志：记录操作人、角色、动作类型、前后快照
+- 消息提醒：支持未读数量、首页提醒卡片、标记已读
+
+### 5. 住客端
 
 - 住客注册
 - 住客登录
@@ -136,6 +156,7 @@
 
 - [database/migrations/2026-04-22_reservation_charge_breakdown.sql](database/migrations/2026-04-22_reservation_charge_breakdown.sql)
 - [database/migrations/2026-04-22_customer_user.sql](database/migrations/2026-04-22_customer_user.sql)
+- [database/migrations/2026-04-23_hotel_ops_extension.sql](database/migrations/2026-04-23_hotel_ops_extension.sql)
 
 ### 2. 配置数据库连接
 
@@ -198,6 +219,15 @@ pnpm dev
 - `GET /api/v1/dashboard/trends`
 - `GET /api/v1/reports/operations/export`
 
+### 房态、流水、日志与提醒
+
+- `GET /api/v1/operations/room-calendar`
+- `GET /api/v1/operations/financial-transactions`
+- `GET /api/v1/operations/financial-summary`
+- `GET /api/v1/operations/logs`
+- `GET /api/v1/operations/notifications`
+- `PUT /api/v1/operations/notifications/{id}/read`
+
 ### 房型与房间
 
 - `GET /api/v1/room-types`
@@ -218,6 +248,8 @@ pnpm dev
 - `POST /api/v1/reservations`
 - `PUT /api/v1/reservations/{id}`
 - `PUT /api/v1/reservations/{id}/status`
+- `PUT /api/v1/reservations/{id}/extend`
+- `PUT /api/v1/reservations/{id}/change-room`
 - `GET /api/v1/reservations/{id}/print`
 - `GET /api/v1/reservations/{id}/check-in-slip`
 - `GET /api/v1/reservations/{id}/checkout-settlement`
@@ -245,6 +277,43 @@ pnpm dev
 - `BOOKED -> CHECKED_IN`
 - `BOOKED -> CANCELLED`
 - `CHECKED_IN -> CHECKED_OUT`
+
+## 前厅操作说明
+
+### 房态日历
+
+- `AVAILABLE`：空房，可预订
+- `BOOKED`：已预订，等待入住
+- `CHECKED_IN`：已入住，占用中
+- `MAINTENANCE`：维修或停用，不可售卖
+
+### 续住
+
+前台可在订单页选中订单，设置新的离店日期。系统会校验原房间在延长期内是否有冲突，并自动重算房费、订单合计和财务流水。
+
+### 换房
+
+前台可为未完成订单选择目标房间。系统会校验目标房间是否维修、是否与其他订单冲突，并记录操作日志与费用调整。
+
+### 财务流水
+
+流水方向包括：
+
+- `CHARGE`：入账，例如房费、押金、退房结算
+- `DISCOUNT`：抵扣，例如优惠券
+- `REFUND`：退款或负向调整
+
+### 操作日志
+
+系统会记录创建订单、更新订单、状态流转、续住、换房、删除订单等关键动作，便于回溯责任人与业务变更。
+
+### 消息提醒
+
+系统会生成以下提醒：
+
+- `BOOKING_SUCCESS`：预订成功
+- `UPCOMING_CHECKIN`：即将入住
+- `UPCOMING_CHECKOUT`：即将退房
 
 ## 计价规则说明
 

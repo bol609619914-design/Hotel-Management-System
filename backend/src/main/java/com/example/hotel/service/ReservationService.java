@@ -4,6 +4,8 @@ import com.example.hotel.common.PageResult;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.hotel.dto.CreateReservationRequest;
 import com.example.hotel.dto.ReservationQueryRequest;
+import com.example.hotel.dto.ReservationExtendRequest;
+import com.example.hotel.dto.ReservationRoomChangeRequest;
 import com.example.hotel.dto.ReservationStatusRequest;
 import com.example.hotel.dto.PageQuery;
 import com.example.hotel.entity.Reservation;
@@ -28,6 +30,10 @@ public interface ReservationService extends IService<Reservation> {
     PageResult<ReservationVO> pageReservationsByGuestId(Long guestId, PageQuery pageQuery);
 
     ReservationVO updateReservationStatus(Long id, ReservationStatusRequest request);
+
+    ReservationVO extendReservation(Long id, ReservationExtendRequest request);
+
+    ReservationVO changeReservationRoom(Long id, ReservationRoomChangeRequest request);
 
     ReservationPrintVO getReservationPrint(Long id);
 

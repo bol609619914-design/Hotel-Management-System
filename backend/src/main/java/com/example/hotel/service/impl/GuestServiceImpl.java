@@ -29,10 +29,13 @@ public class GuestServiceImpl extends ServiceImpl<GuestMapper, Guest> implements
 
     @Override
     public Guest createOrUpdateGuest(String fullName, String phone, String idCard) {
-        Guest guest = baseMapper.findByPhone(phone);
-        if (guest == null) {
-            guest = baseMapper.findByIdCard(idCard);
+        Guest guestByPhone = baseMapper.findByPhone(phone);
+        Guest guestByIdCard = baseMapper.findByIdCard(idCard);
+        if (guestByPhone != null && guestByIdCard != null && !guestByPhone.getId().equals(guestByIdCard.getId())) {
+            throw new BusinessException("guest phone and idCard belong to different guests");
         }
+
+        Guest guest = guestByPhone != null ? guestByPhone : guestByIdCard;
         if (guest == null) {
             guest = new Guest();
             guest.setFullName(fullName);
@@ -45,6 +48,7 @@ public class GuestServiceImpl extends ServiceImpl<GuestMapper, Guest> implements
         }
 
         guest.setFullName(fullName);
+        guest.setPhone(phone);
         guest.setIdCard(idCard);
         updateById(guest);
         return guest;

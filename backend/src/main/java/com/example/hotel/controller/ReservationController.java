@@ -3,7 +3,9 @@ package com.example.hotel.controller;
 import com.example.hotel.common.ApiResponse;
 import com.example.hotel.common.PageResult;
 import com.example.hotel.dto.CreateReservationRequest;
+import com.example.hotel.dto.ReservationExtendRequest;
 import com.example.hotel.dto.ReservationQueryRequest;
+import com.example.hotel.dto.ReservationRoomChangeRequest;
 import com.example.hotel.dto.ReservationStatusRequest;
 import com.example.hotel.service.ReservationService;
 import com.example.hotel.vo.ReservationPrintVO;
@@ -79,5 +81,17 @@ public class ReservationController {
     public ApiResponse<ReservationVO> updateStatus(@PathVariable Long id,
                                                    @Valid @RequestBody ReservationStatusRequest request) {
         return ApiResponse.success("reservation status updated", reservationService.updateReservationStatus(id, request));
+    }
+
+    @PutMapping("/{id}/extend")
+    public ApiResponse<ReservationVO> extend(@PathVariable Long id,
+                                             @Valid @RequestBody ReservationExtendRequest request) {
+        return ApiResponse.success("reservation extended", reservationService.extendReservation(id, request));
+    }
+
+    @PutMapping("/{id}/change-room")
+    public ApiResponse<ReservationVO> changeRoom(@PathVariable Long id,
+                                                 @Valid @RequestBody ReservationRoomChangeRequest request) {
+        return ApiResponse.success("reservation room changed", reservationService.changeReservationRoom(id, request));
     }
 }
